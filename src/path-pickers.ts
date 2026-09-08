@@ -1,3 +1,4 @@
+import { pickDirectoryFromInput } from "./helpers/folder-input";
 import { App, FuzzySuggestModal, Notice, TFolder } from "obsidian";
 import { getRuntimeRequire, isMobileRuntime, normalizeAbsoluteFolderPath, normalizeStoredOutputPathValue } from "./helpers/desktop-paths";
 
@@ -36,28 +37,7 @@ export async function pickFolderPath(): Promise<string | null> {
     return null;
   }
 
-  return await new Promise((resolve) => {
-    const input = createEl("input");
-    input.type = "file";
-    (input as HTMLInputElement & { webkitdirectory?: boolean; directory?: boolean }).webkitdirectory = true;
-    (input as HTMLInputElement & { webkitdirectory?: boolean; directory?: boolean }).directory = true;
-    input.multiple = true;
-
-    input.addEventListener(
-      "change",
-      () => {
-        const files = input.files ?? [];
-        if (!files.length) return resolve(null);
-        const anyFile = files[0] as { path?: string };
-        const selectedPath = typeof anyFile?.path === "string" ? anyFile.path : "";
-        if (!selectedPath) return resolve(null);
-        resolve(normalizeAbsoluteFolderPath(selectedPath.replace(/[/\\][^/\\]+$/, "")));
-      },
-      { once: true },
-    );
-
-    input.click();
-  });
+  return pickDirectoryFromInput(createEl("input"));
 }
 
 export function normalizeStoredOutputPath(raw: string): string {
@@ -102,7 +82,7 @@ class VaultFolderPickerModal extends FuzzySuggestModal<TFolder> {
 
 export function openVaultFolderPicker(app: App, onPickPath: (vaultPath: string) => void): void {
   new VaultFolderPickerModal(app, (folder) => {
-    const nextPath = folder.path || "/";
+    const nextPath = folder.path && folder.path !== "/" ? folder.path : ".";
     onPickPath(nextPath);
   }).open();
 }

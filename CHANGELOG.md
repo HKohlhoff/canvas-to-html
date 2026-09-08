@@ -6,6 +6,38 @@ first.
 
 ## [Unreleased]
 
+## [1.3.2] – 2026-09-08
+
+### Fixed
+
+- Keep keyboard focus inside search while it is open and restore focus when
+  it closes; cancelling the folder picker now ends the selection cleanly.
+
+- Show the update description once for each plugin version, including
+  maintenance updates; keep the read marker tied to closing the dialog.
+- Prevent overlapping exports from mixing files in the same output folder.
+- Close plugin-owned dialogs on disable and serialize settings writes without
+  overwriting data from a newer, unsupported schema.
+- Keep literal script-closing text inert in exported HTML and prevent
+  executable navigation schemes in Markdown links and link-node previews.
+- Preserve absolute binary-asset destinations, Vault-root output, Windows drive
+  roots and UNC paths.
+- Resolve internal note links and asset embeds in text nodes as well as file
+  nodes.
+- Keep cyclic note links navigable in single HTML, terminate recursive section
+  embeds, and give same-name PDF viewers distinct portable filenames.
+- Keep folding available for Canvases containing only groups.
+
+### Development
+
+- Split the renderer into document, Markdown, node, theme, stylesheet and
+  browser modules while preserving its public import paths and standalone output.
+
+- Preserve existing release artifacts after a failed build, require an explicit
+  deployment destination, and reject release tags that differ from the manifest.
+- Update the vulnerable development dependency `fast-uri` to 3.1.7 and add
+  focused export, lifecycle, path and build regressions.
+
 ## [1.3.1] – 2026-08-30
 
 ### Fixed

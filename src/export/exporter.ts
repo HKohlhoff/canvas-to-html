@@ -15,7 +15,7 @@ import {
 import { isAbsoluteFilesystemPath, requireDesktopNodeApis } from "../helpers/desktop-paths";
 import { buildUniqueOutputName, normalizeFolder, safeSegment, toExportRelativePath } from "./files";
 import { normalizeCanvasData, shouldRewriteInternalTarget } from "./canvas-data";
-import { embedSizeAttributes, normalizeWikiTarget, parseWikiReference, splitTargetSuffix } from "../helpers/link-helpers";
+import { safeNavigationUrl, safeWebPreviewUrl, embedSizeAttributes, normalizeWikiTarget, parseWikiReference, splitTargetSuffix } from "../helpers/link-helpers";
 import { getHrefForMarkdownPage } from "../helpers/path-helpers";
 import { buildPreviewText } from "../helpers/preview-helpers";
 import type { ExportFormatChoice } from "../settings";
@@ -48,6 +48,7 @@ type PreparedCanvasData = CanvasData;
 
 type MarkdownContext = {
   app: App;
+  canvasFile: TFile;
   exportFormat: ExportFormatChoice;
   outputMode: "vault" | "filesystem";
   outputRoot: string;
@@ -179,7 +180,7 @@ export async function exportCanvasPackage(
     throw new Error(`Invalid canvas JSON in ${canvasFile.path}${detail}`);
   }
 
-  const outputMode = isAbsoluteFilesystemPath(settings.outputDir) ? "filesystem" : "vault";
+  const outputMode = isAbsoluteFilesystemPath(settings.outputDir) && settings.outputDir.trim() !== "/" ? "filesystem" : "vault";
   const baseFolder = resolveBaseFolder(settings.outputDir, outputMode);
   const safeCanvasName = safeSegment(canvasFile.basename);
   const exportFolder = joinOutputPath(outputMode, baseFolder, safeCanvasName);
@@ -205,6 +206,7 @@ export async function exportCanvasPackage(
 
   const ctx: MarkdownContext = {
     app,
+    canvasFile,
     exportFormat,
     outputMode,
     outputRoot: useSingleHtml ? singleHtmlPath : exportFolder,
@@ -279,6 +281,12 @@ async function prepareNode(ctx: MarkdownContext, node: CanvasNode): Promise<Canv
       exportHtmlPath,
       canvasHref,
     };
+  }
+
+  if (nodeType === "text" && node.text) {
+    const html = await markdownToHtml(node.text, { darkMode: ctx.darkMode, highlightingTheme: ctx.highlightingTheme });
+    const renderedTextHtml = await rewriteMarkdownHtmlAssets(ctx, ctx.canvasFile, html, "inline", "canvas");
+    return { ...node, renderedTextHtml };
   }
 
   if (nodeType !== "file") {
@@ -360,7 +368,7 @@ async function prepareNode(ctx: MarkdownContext, node: CanvasNode): Promise<Canv
     const pdfFilename = ctx.exportFormat === "single-html"
       ? exportPath
       : exportPath.split("/").pop() || "";
-    const viewerName = file.basename.replace(/\.pdf$/i, "") + "-viewer.html";
+    const viewerName = uniqueOutputName(ctx, `${file.basename}-viewer`, "html");
     const viewerPath = joinOutputPath(ctx.outputMode, ctx.assetsFilesDir, viewerName);
     const canvasHrefForViewer = normalizeExportHref(getHrefForMarkdownPage(normalizeExportHref(`assets/files/${viewerName}`), "index.html"));
     const viewerHtml = `<!DOCTYPE html>
@@ -453,12 +461,19 @@ async function exportMarkdownSectionInline(
   heading: string,
   linkBase: LinkBase,
 ): Promise<string> {
-  const content = stripFrontmatter(await ctx.app.vault.read(file));
-  const section = extractMarkdownSection(content, heading);
-  if (!section) return "";
-  let htmlBody = await markdownToHtml(section, { darkMode: ctx.darkMode, highlightingTheme: ctx.highlightingTheme });
-  htmlBody = await rewriteMarkdownHtmlAssets(ctx, file, htmlBody, "inline", linkBase);
-  return htmlBody;
+  const sectionKey = `${file.path}#${heading}`;
+  if (ctx.inlineStack.has(sectionKey)) return "";
+  ctx.inlineStack.add(sectionKey);
+  try {
+    const content = stripFrontmatter(await ctx.app.vault.read(file));
+    const section = extractMarkdownSection(content, heading);
+    if (!section) return "";
+    let htmlBody = await markdownToHtml(section, { darkMode: ctx.darkMode, highlightingTheme: ctx.highlightingTheme });
+    htmlBody = await rewriteMarkdownHtmlAssets(ctx, file, htmlBody, "inline", linkBase);
+    return htmlBody;
+  } finally {
+    ctx.inlineStack.delete(sectionKey);
+  }
 }
 
 function extractMarkdownSection(markdown: string, headingRef: string): string {
@@ -594,6 +609,11 @@ async function renderMarkdownFileToHtml(
       ctx.htmlMap.set(file.path, rel);
     }
 
+    if (mode === "page" && ctx.exportFormat === "single-html") {
+      rel = registerSingleHtmlPage(ctx, (pageTitle || file.basename || file.name).trim(), "markdown", "");
+      ctx.htmlMap.set(file.path, rel);
+    }
+
     const content = stripFrontmatter(await ctx.app.vault.read(file));
     let htmlBody = await markdownToHtml(content, { darkMode: ctx.darkMode, highlightingTheme: ctx.highlightingTheme });
     htmlBody = await rewriteMarkdownHtmlAssets(ctx, file, htmlBody, mode, linkBase);
@@ -604,9 +624,9 @@ async function renderMarkdownFileToHtml(
 
     if (ctx.exportFormat === "single-html") {
       const title = (pageTitle || file.basename || file.name).trim();
-      const inlineHref = registerSingleHtmlPage(ctx, title, "markdown", buildSingleHtmlMarkdownPageBody(title, htmlBody));
-      ctx.htmlMap.set(file.path, inlineHref);
-      return inlineHref;
+      const page = ctx.singleHtmlPages.find((entry) => `#page-${entry.id}` === rel);
+      if (page) page.bodyHtml = buildSingleHtmlMarkdownPageBody(title, htmlBody);
+      return rel;
     }
     const title = (pageTitle || file.basename || file.name).trim();
     const canvasHref = getHrefForMarkdownPage(rel, "index.html");
@@ -623,6 +643,13 @@ async function renderMarkdownFileToHtml(
     );
     await writeTextFile(ctx.app, outputPath, htmlDoc, ctx.outputMode);
     return rel;
+  } catch (error) {
+    if (mode === "page") {
+      const failedHref = ctx.htmlMap.get(file.path);
+      ctx.htmlMap.delete(file.path);
+      ctx.singleHtmlPages = ctx.singleHtmlPages.filter((page) => `#page-${page.id}` !== failedHref);
+    }
+    throw error;
   } finally {
     activeStack.delete(file.path);
   }
@@ -940,7 +967,7 @@ async function copyVaultFile(ctx: MarkdownContext, file: TFile, kind: "image" | 
 
   const folder = kind === "image" ? ctx.assetsImagesDir : ctx.assetsFilesDir;
   const outputName = uniqueOutputName(ctx, file.basename, file.extension);
-  const outputPath = normalizePath(`${folder}/${outputName}`);
+  const outputPath = joinOutputPath(ctx.outputMode, folder, outputName);
   await writeBinaryFile(ctx.app, outputPath, bytes, ctx.outputMode);
 
   const rel = toExportRelativePath(outputPath, ctx.outputRoot);
@@ -1083,7 +1110,8 @@ function buildLinkDocumentHtml(
 ): string {
   const theme = getLinkPageTheme(darkMode);
   const safeTitle = escapeHtmlAttr(url || title || "Link");
-  const safeUrl = escapeHtmlAttr(url);
+  const safeUrl = escapeHtmlAttr(safeNavigationUrl(url));
+  const previewUrl = escapeHtmlAttr(safeWebPreviewUrl(url));
   const canvasColorVars = buildCanvasColorVariables(canvasColors);
 
   return `<!DOCTYPE html>
@@ -1221,7 +1249,7 @@ function buildLinkDocumentHtml(
   <div id="link-status" class="link-page-status"></div>
   <div class="link-page-body">
     <div id="link-preview" class="link-page-preview">
-      <iframe id="link-preview-frame" src="${safeUrl}" title="${safeTitle}" loading="lazy"></iframe>
+      <iframe id="link-preview-frame" src="${previewUrl}" title="${safeTitle}" loading="lazy"></iframe>
     </div>
     <div id="link-fallback" class="link-page-fallback">
       <div class="link-page-card">
@@ -1313,11 +1341,12 @@ function buildSingleHtmlMarkdownPageBody(title: string, bodyHtml: string): strin
 
 function buildSingleHtmlLinkPageBody(title: string, url: string): string {
   const safeTitle = escapeHtmlAttr(title || url || "Link");
-  const safeUrl = escapeHtmlAttr(url);
+  const safeUrl = escapeHtmlAttr(safeNavigationUrl(url));
+  const previewUrl = escapeHtmlAttr(safeWebPreviewUrl(url));
   return `<section class="single-link-page">
     <a class="link-page-title" href="${safeUrl}" target="_blank" rel="noopener noreferrer">${safeTitle}</a>
     <div class="link-page-note">Use the link above if the website blocks embedding or if you want to open the page in its own browser tab.</div>
-    <iframe src="${safeUrl}" title="${safeTitle}" loading="lazy"></iframe>
+    <iframe src="${previewUrl}" title="${safeTitle}" loading="lazy"></iframe>
   </section>`;
 }
 

@@ -4,7 +4,8 @@ Use this checklist before publishing Canvas HTML Exporter.
 
 ## Branch and repository
 
-- The intended feature branch was reviewed and deliberately merged into
+- The reviewed release branch is merged into `master` and back into `develop`
+  using explicit merge commits (`--no-ff`); its annotated version tag is on
   `master`.
 - `git status` is understood and contains no unintended files.
 - No `node_modules/`, `.test-build/`, `.DS_Store`, local Vault state, generated
@@ -23,8 +24,8 @@ Use this checklist before publishing Canvas HTML Exporter.
   `npm run test:metadata` verifies this synchronization.
 - The embedded update-note ID matches the plugin version so a feature release
   opens its note once, and `Last Update.md` contains the identical Markdown.
-  A maintenance release may retain the preceding feature note only through an
-  explicit version-specific automated-test exception.
+  Maintenance releases also need their own version-bound ID and description;
+  do not reuse the previous version's read marker.
 - Every user-facing feature release follows the shared update-note standard:
   open a transient Markdown view once after update, mark it as read only after
   it closes, create no Vault file, and keep **Show last update** at the bottom
@@ -46,6 +47,7 @@ npm run build:prod
 ```
 
 - All focused tests pass.
+- The release workflow verifies that its tag equals the manifest version.
 - TypeScript test compilation passes.
 - ESLint passes without warnings.
 - `release/main.js`, `release/manifest.json` and `release/styles.css` are created.
@@ -63,7 +65,7 @@ npm run build:prod
   description opens once, existing settings survive, closing it leaves no
   Vault file, and a restart does not reopen it.
 - Use **Show last update** at the bottom of settings and confirm that the same
-  version 1.3.0 description can be reopened at any time.
+  current version's description can be reopened at any time.
 - Use **Show readme** beside it and confirm that the embedded repository README
   renders locally, closes cleanly, creates no Vault file and performs no
   automatic image request. Confirm that no image-placeholder notice remains and
@@ -140,3 +142,21 @@ and verify at least:
   release process explicitly requires more.
 - Tag, push, GitHub release and Community Plugin update occur only after an
   explicit release approval.
+
+## Required runtime evidence before release
+
+Automated tests do not replace this gate. Record Obsidian, OS, browser and
+plugin versions and the result of the manual matrix before approving a release.
+For local maintainer tests, use only the shared `Obsidian-PluginTests` Vault.
+
+- Upgrade with the previous version's read marker already saved, once during
+  Obsidian startup and once while the workspace is already open. The new note
+  must open automatically, be marked read on close, stay closed on restart,
+  and remain available through **Show last update**.
+- Disable while an update or README dialog is open; both must close without
+  writing a read marker from the unloaded instance.
+- Export both modes to a Vault folder, the Vault root (`.`), and an absolute
+  system folder. Check copied binary assets, cyclic note links, recursive
+  section embeds, same-name PDFs, and group-only folding controls.
+- Repeat drive-root and UNC output checks on Windows. The manifest remains
+  desktop-only; mobile operation is not a release claim for this plugin.

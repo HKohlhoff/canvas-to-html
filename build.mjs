@@ -172,13 +172,8 @@ function watchStaticFile(file, onChange) {
   }
 }
 
-ensureReleaseDir();
-copyStaticToRelease();
-
 if (deployMode && !OBSIDIAN_PLUGINS_DIR) {
-  console.warn(
-    "[deploy] --deploy was requested, but OBSIDIAN_PLUGINS_DIR is not set."
-  );
+  throw new Error("--deploy requires OBSIDIAN_PLUGINS_DIR to name the test vault target.");
 }
 
 const common = {
@@ -198,9 +193,8 @@ const common = {
       name: "copy-static-and-deploy",
       setup(build) {
         build.onEnd((result) => {
-          copyStaticToRelease();
-
           if (result.errors.length === 0) {
+            copyStaticToRelease();
             deployToVault();
           } else {
             console.log("[deploy] skipped because the build reported errors");
@@ -232,14 +226,10 @@ console.log(
 
 const staticWatchers = [
   watchStaticFile("manifest.json", () => {
-    copyStaticToRelease();
-    deployToVault();
-    console.log("[static] manifest.json updated");
+    void ctx.rebuild().catch((error) => console.error("[static] rebuild failed", error));
   }),
   watchStaticFile("styles.css", () => {
-    copyStaticToRelease();
-    deployToVault();
-    console.log("[static] styles.css updated");
+    void ctx.rebuild().catch((error) => console.error("[static] rebuild failed", error));
   }),
 ].filter(Boolean);
 

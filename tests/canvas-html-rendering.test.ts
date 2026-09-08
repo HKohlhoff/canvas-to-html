@@ -30,6 +30,34 @@ const baseOptions = {
 };
 
 (async () => {
+await test("does not execute link URLs or Markdown navigation schemes", async () => {
+  const data: CanvasData = { nodes: [
+    { id: "link", type: "link", url: "javascript:alert(1)", x: 0, y: 0, width: 100, height: 100 },
+    { id: "text", type: "text", text: "[open](javascript:alert(1))", x: 0, y: 0, width: 100, height: 100 },
+  ], edges: [] };
+  const html = await convertCanvasToHtml(data, baseOptions);
+  assert.doesNotMatch(html, /(?:href|src)="javascript:/);
+  assert.match(html, /src="about:blank"/);
+});
+
+for (const exportFormat of ["package", "single-html"] as const) {
+  await test(`keeps script-closing canvas content inert in ${exportFormat}`, async () => {
+    const payload = '</script><script>throw new Error("injected")</script>';
+    const data: CanvasData = { nodes: [{ id: payload, type: "text", text: payload, x: 0, y: 0, width: 100, height: 100 }], edges: [{ id: "edge", fromNode: payload, toNode: payload, label: payload }] };
+    const html = await convertCanvasToHtml(data, { ...baseOptions, title: payload, exportFormat });
+    const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)];
+    assert.equal(scripts.length, 1);
+    new vm.Script(scripts[0][1]);
+    assert.doesNotMatch(scripts[0][1], /<\/script/i);
+    const title = /const baseDocumentTitle = (.*);/.exec(scripts[0][1])![1];
+    assert.equal(JSON.parse(title), payload);
+  });
+  await test(`offers folding for group-only canvases in ${exportFormat}`, async () => {
+    const html = await convertCanvasToHtml({ nodes: [{ id: "g", type: "group", x: 0, y: 0, width: 200, height: 200 }], edges: [] }, { ...baseOptions, exportFormat });
+    assert.match(html, /id="folding-menu"/);
+  });
+}
+
 await test("renders markdown file nodes with title link and preview", async () => {
   const data: CanvasData = {
     name: "Test",
