@@ -62,6 +62,14 @@ Every failure case must produce a normal usable export rather than aborting.
 ### Update note and plugin data
 
 - Start once with legacy top-level plugin settings and no release-note marker.
+- Upgrade with the previous version's marker already saved. Check both a cold
+  Obsidian start and enabling the updated plugin in an already open workspace.
+  In both cases the new version's note must open automatically.
+- Close the automatic note, restart, and verify it stays closed. Reopen it with
+  **Show last update**, including while the automatic note is still open:
+  only one update dialog should exist.
+- Disable with the update note and README open: both dialogs must close. A
+  note closed by unloading must not mark the update as read.
 - Confirm the Markdown-rendered feature description opens in Obsidian.
 - Confirm the existing exporter settings are unchanged after migration.
 - Close it and confirm no release-note file remains anywhere in the Vault.
@@ -175,3 +183,38 @@ record the Windows, Obsidian, browser and plugin versions:
 
 This Windows check is a compact cross-platform smoke test; it supplements and
 does not replace the complete manual matrix above.
+
+## Quality-review regressions
+
+Repeat in package and single-HTML mode:
+
+- Export to `.` (Vault root), a Vault subfolder and an absolute system folder.
+  Verify an image's actual bytes at the expected destination, not just its link.
+- On Windows also choose a drive root and a UNC share; verify the complete
+  package is written there.
+- Link note A to B and B to A; navigate both ways. Add a self-embedding heading
+  (`![[A#Section]]` inside that section): export must finish with a readable
+  unresolved-embed fallback at the recursion boundary.
+- Add two PDFs named `Report #1.pdf` from different folders. Each viewer must
+  open the correct PDF.
+- Export a Canvas containing only groups; folding must remain accessible.
+- Include literal `</script>` in a text node and edge label: it must remain
+  content and all browser controls must still work.
+
+Record these results with the runtime versions before release.
+
+## Search focus and folder-picker cancellation
+
+For both export formats, open search once by its toolbar button and once with
+`/` from another focused control. Tab and Shift+Tab must cycle through visible,
+enabled search controls (including new result links/buttons) without reaching
+the Canvas behind the dialog. Escape, Close and clicking the backdrop must
+return focus to the original control without changing the viewport scroll.
+Close search immediately after opening it and confirm delayed autofocus does
+not move focus back into the hidden dialog. With search disabled, ordinary
+Tab navigation must remain unchanged.
+
+Where Electron's folder dialogs are unavailable, cancel the fallback directory
+picker and then open it again. Cancellation must leave settings unchanged and
+the second selection must work. This fallback is additionally tested with
+synthetic input events; a real runtime check remains part of release validation.

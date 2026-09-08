@@ -51,3 +51,15 @@ export function normalizeWikiTarget(value: string): string {
   }
   return out.trim();
 }
+
+/** Reject executable navigation schemes before writing untrusted link targets. */
+export function safeNavigationUrl(value: string): string {
+  const normalized = value.replace(/^[\p{Cc}\s]+|[\p{Cc}\s]+$/gu, "").replace(/[\t\r\n]/g, "");
+  if (/^(?:javascript|vbscript|data):/i.test(normalized)) return "#";
+  return normalized;
+}
+
+export function safeWebPreviewUrl(value: string): string {
+  const normalized = safeNavigationUrl(value);
+  return /^https?:\/\//i.test(normalized) ? normalized : "about:blank";
+}

@@ -8,11 +8,7 @@ import {
 const manifest = JSON.parse(readFileSync("manifest.json", "utf8")) as {
   version: string;
 };
-const releaseNoteIdExceptions: Readonly<Record<string, string>> = {
-  "1.3.1": "release-1.3.0",
-};
-const expectedReleaseNoteId = releaseNoteIdExceptions[manifest.version]
-  ?? `release-${manifest.version}`;
+const expectedReleaseNoteId = `release-${manifest.version}`;
 const releaseNoteVersion = expectedReleaseNoteId.replace(/^release-/, "");
 assert.equal(CURRENT_RELEASE_NOTES_ID, expectedReleaseNoteId);
 assert.ok(
@@ -20,20 +16,15 @@ assert.ok(
     `Canvas HTML Exporter ${releaseNoteVersion}`,
   ),
 );
-assert.match(CURRENT_RELEASE_NOTES_MARKDOWN, /Advanced Canvas compatibility/);
-assert.match(CURRENT_RELEASE_NOTES_MARKDOWN, /Advanced Canvas is not required/);
-assert.match(CURRENT_RELEASE_NOTES_MARKDOWN, /\.canvas.*file/su);
-assert.match(CURRENT_RELEASE_NOTES_MARKDOWN, /currently looks simpler in Obsidian/);
-assert.match(CURRENT_RELEASE_NOTES_MARKDOWN, /does not remove its stored/);
-assert.match(CURRENT_RELEASE_NOTES_MARKDOWN, /## More of your Canvas appearance in HTML/);
-assert.match(CURRENT_RELEASE_NOTES_MARKDOWN, /Built-in shapes/);
-assert.match(CURRENT_RELEASE_NOTES_MARKDOWN, /Borders and alignment/);
-assert.match(CURRENT_RELEASE_NOTES_MARKDOWN, /filled, outline/);
-assert.match(CURRENT_RELEASE_NOTES_MARKDOWN, /Style Settings/);
-assert.match(CURRENT_RELEASE_NOTES_MARKDOWN, /Collapsible groups/);
-assert.match(CURRENT_RELEASE_NOTES_MARKDOWN, /Advanced Canvas Attributes\.canvas/);
-assert.match(CURRENT_RELEASE_NOTES_MARKDOWN, /Floating edges, portals/);
-assert.match(CURRENT_RELEASE_NOTES_MARKDOWN, /a-star/);
+assert.match(CURRENT_RELEASE_NOTES_MARKDOWN, /More reliable exports/);
+assert.match(CURRENT_RELEASE_NOTES_MARKDOWN, /Text nodes/);
+assert.match(CURRENT_RELEASE_NOTES_MARKDOWN, /Recursive section embeds/);
+assert.match(CURRENT_RELEASE_NOTES_MARKDOWN, /PDFs/);
+assert.match(CURRENT_RELEASE_NOTES_MARKDOWN, /Windows drive roots/);
+assert.match(CURRENT_RELEASE_NOTES_MARKDOWN, /export the original Canvas again/);
+assert.match(CURRENT_RELEASE_NOTES_MARKDOWN, /Tab and Shift\+Tab/);
+assert.match(CURRENT_RELEASE_NOTES_MARKDOWN, /marked as read\s+only after you close/);
+assert.match(CURRENT_RELEASE_NOTES_MARKDOWN, /source .*\.canvas.* file\s+is not modified/);
 assert.doesNotMatch(CURRENT_RELEASE_NOTES_MARKDOWN, /API v1/);
 assert.match(CURRENT_RELEASE_NOTES_MARKDOWN, /leaves no note or other content file in your Vault/);
 assert.match(CURRENT_RELEASE_NOTES_MARKDOWN, /Show last update/);

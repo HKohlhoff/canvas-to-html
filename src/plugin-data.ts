@@ -17,6 +17,9 @@ export type StoredPluginData = {
 
 export function readPluginData(saved: unknown): PluginDataSnapshot {
   const data = asRecord(saved);
+  if (typeof data.schemaVersion === "number" && data.schemaVersion > PLUGIN_DATA_SCHEMA_VERSION) {
+    throw new Error(`Plugin data schema ${data.schemaVersion} requires a newer Canvas HTML Exporter. Existing data was not changed.`);
+  }
   const ui = asRecord(data.ui);
   const settingsSource = data.settings && typeof data.settings === "object"
     ? data.settings
@@ -36,7 +39,7 @@ export function buildStoredPluginData(
 ): StoredPluginData {
   return {
     schemaVersion: PLUGIN_DATA_SCHEMA_VERSION,
-    settings,
+    settings: { ...settings },
     ui: {
       lastShownReleaseNotesId: lastShownReleaseNotesId.trim(),
     },
