@@ -58,3 +58,42 @@ migration source. The feature-update description is embedded as Markdown in
 the plugin bundle and rendered in a short-lived Obsidian modal; it does not
 create a note or other content file in the Vault. The read marker is stored
 only after the modal closes.
+
+Writes of settings and update markers are serialized with independent snapshots.
+Data with a newer unsupported schema is rejected before initialization so an
+older plugin cannot overwrite it. The update ID is bound to every plugin
+version, including maintenance releases; plugin-owned dialogs close on unload.
+
+JSON embedded inside browser scripts escapes `<` so Canvas content cannot end
+the script element. Link-node previews accept HTTP(S) destinations only;
+executable navigation schemes are not emitted as Markdown or link-node links.
+
+## Renderer modules
+
+`src/render/converter.ts` remains the public facade; existing plugin, exporter
+and test imports continue to work. Implementation responsibilities are separate:
+
+- `types.ts` and `metadata.ts`: shared render data, exporter version/signature;
+- `canvas-document.ts`: prepare the Canvas model and assemble the document;
+- `canvas-styles.ts` and `theme.ts`: Canvas stylesheet and theme/color rules;
+- `nodes.ts` and `geometry.ts`: nodes, group titles, minimap items and geometry;
+- `markdown.ts`, `highlighting.ts` and `markdown-document.ts`: Markdown, code
+  highlighting and standalone note documents;
+- `html.ts`: HTML escaping and safe script-data serialization;
+- `browser-runtime.ts`: browser initialization and event registration;
+- `browser-edges.ts`, `browser-viewport.ts`, `browser-pages.ts`,
+  `browser-search.ts`, `browser-folding.ts` and `browser-interaction.ts`:
+  the corresponding browser functions, emitted into the same shared closure;
+- `browser-runtime-types.ts`: the typed inputs for browser code generation.
+
+Browser pieces remain generated inline JavaScript: the exported document needs
+no module loader, runtime library or external script. Their assembly order
+preserves the existing closure and behavior in both export modes. Internal
+renderer modules do not import the public facade and have no dependency cycles.
+The production version-bump and metadata checks use `metadata.ts` as the source
+of the exporter version.
+
+Search keeps Tab/Shift+Tab inside the open dialog and returns focus to the
+original trigger when closed. The browser directory-picker fallback lives in
+`src/helpers/folder-input.ts`; both selection and cancellation settle its Promise
+and remove event handlers.

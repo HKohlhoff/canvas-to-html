@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { convertCanvasToHtml } from "../src/render/converter";
 import { exportCanvasPackage } from "../src/export/exporter";
 
 type MockFile = {
@@ -173,6 +174,119 @@ function createMockApp(initialFiles: Array<{ path: string; text?: string; binary
 }
 
 (async () => {
+  for (const exportFormat of ["package", "single-html"] as const) {
+    await test(`rewrites text-node note links and embeds in ${exportFormat}`, async () => {
+      const { app, files } = createMockApp([
+        { path: "text.canvas", text: JSON.stringify({ nodes: [{ id: "text", type: "text", text: "[[Note]]\n![[image.png]]", x: 0, y: 0, width: 100, height: 100 }], edges: [] }) },
+        { path: "Note.md", text: "# Note\nContent" },
+        { path: "image.png", binary: new Uint8Array([137, 80, 78, 71]).buffer },
+      ]);
+      const result = await exportCanvasPackage(app as never, files.get("text.canvas") as never, { darkMode: false, outputDir: "out", exportFormat });
+      const html = await convertCanvasToHtml(result.data, result.options);
+      const content = result.data.nodes[0].renderedTextHtml!;
+      assert.ok(html.includes(content));
+      assert.doesNotMatch(content, /\[\[/);
+      if (exportFormat === "single-html") {
+        assert.match(content, /data-inline-page="p\d+"/);
+        assert.match(content, /src="data:image\/png;base64,/);
+      } else {
+        const targets = [...content.matchAll(/(?:href|src)="(assets\/[^"]+)"/g)];
+        assert.equal(targets.length, 2);
+        for (const target of targets) assert.ok(files.has(`out/text/${target[1]}`));
+      }
+    });
+  }
+
+  await test("copies binary assets into the absolute export destination", async () => {
+    const folder = await fs.mkdtemp(path.join(os.tmpdir(), "canvas-exporter-assets-"));
+    try {
+      const binary = new Uint8Array([137, 80, 78, 71]).buffer;
+      const { app, files } = createMockApp([
+        { path: "assets.canvas", text: JSON.stringify({ nodes: [{ id: "img", type: "file", file: "image.png", x: 0, y: 0, width: 100, height: 100 }], edges: [] }) },
+        { path: "image.png", binary },
+      ]);
+      const result = await exportCanvasPackage(app as never, files.get("assets.canvas") as never, { darkMode: false, outputDir: folder });
+      const copied = await fs.readFile(path.join(result.outputPath, result.data.nodes[0].exportPath!));
+      assert.deepEqual(new Uint8Array(copied), new Uint8Array(binary));
+    } finally {
+      await fs.rm(folder, { recursive: true, force: true });
+    }
+  });
+  for (const exportFormat of ["package", "single-html"] as const) {
+    await test(`does not activate executable link-node URLs in ${exportFormat}`, async () => {
+      const { app, files } = createMockApp([{ path: "link.canvas", text: JSON.stringify({ nodes: [{ id: "link", type: "link", url: "javascript:alert(1)", x: 0, y: 0, width: 100, height: 100 }], edges: [] }) }]);
+      const result = await exportCanvasPackage(app as never, files.get("link.canvas") as never, { darkMode: false, outputDir: "out", exportFormat });
+      const html = exportFormat === "single-html" ? result.options.embeddedPages![0].bodyHtml : files.get(`out/link/${result.data.nodes[0].canvasHref}`)!.text!;
+      assert.doesNotMatch(html, /(?:href|src)="javascript:/);
+      assert.match(html, /src="about:blank"/);
+    });
+  }
+
+  for (const exportFormat of ["package", "single-html"] as const) {
+    await test(`keeps cyclic note links usable in ${exportFormat}`, async () => {
+      const { app, files } = createMockApp([
+        { path: "cycle.canvas", text: JSON.stringify({ nodes: [{ id: "a", type: "file", file: "A.md", x: 0, y: 0, width: 200, height: 100 }], edges: [] }) },
+        { path: "A.md", text: "# A\n[[B]]" },
+        { path: "B.md", text: "# B\n[[A]]" },
+      ]);
+      const result = await exportCanvasPackage(app as never, files.get("cycle.canvas") as never, { darkMode: false, outputDir: "out", exportFormat });
+      if (exportFormat === "single-html") {
+        const pages = result.options.embeddedPages!;
+        assert.equal(pages.length, 2);
+        for (const page of pages) {
+          const target = /href="#page-(p\d+)"/.exec(page.bodyHtml)?.[1];
+          assert.ok(pages.some((entry) => entry.id === target), page.bodyHtml);
+        }
+      } else {
+        for (const file of [...files.values()].filter((entry) => entry.extension === "html")) {
+          const target = /href="(\d+_[AB]\.html)"/.exec(file.text!)?.[1];
+          assert.ok(target && files.has(`out/cycle/assets/files/${target}`));
+        }
+      }
+    });
+
+    await test(`terminates recursive section embeds in ${exportFormat}`, async () => {
+      const { app, files } = createMockApp([
+        { path: "recursive.canvas", text: JSON.stringify({ nodes: [{ id: "a", type: "file", file: "A.md", x: 0, y: 0, width: 200, height: 100 }], edges: [] }) },
+        { path: "A.md", text: "# Section\n![[A#Section]]" },
+      ]);
+      let reads = 0;
+      const read = app.vault.read;
+      app.vault.read = (file) => {
+        assert.ok(++reads < 30, "recursive embed must terminate without unbounded reads");
+        return read(file);
+      };
+      const result = await exportCanvasPackage(app as never, files.get("recursive.canvas") as never, { darkMode: false, outputDir: "out", exportFormat });
+      assert.ok(reads < 30);
+      const html = exportFormat === "single-html" ? result.options.embeddedPages![0].bodyHtml : files.get(`out/recursive/${result.data.nodes[0].exportHtmlPath}`)?.text;
+      assert.match(html || "", /Unresolved embed/);
+    });
+
+    await test(`keeps same-name PDF viewers distinct in ${exportFormat}`, async () => {
+      const { app, files } = createMockApp([
+        { path: "pdf.canvas", text: JSON.stringify({ nodes: ["a", "b"].map((id) => ({ id, type: "file", file: `${id}/Report #1.pdf`, x: 0, y: 0, width: 200, height: 100 })), edges: [] }) },
+        { path: "a/Report #1.pdf", binary: new Uint8Array([1]).buffer },
+        { path: "b/Report #1.pdf", binary: new Uint8Array([2]).buffer },
+      ]);
+      const result = await exportCanvasPackage(app as never, files.get("pdf.canvas") as never, { darkMode: false, outputDir: "out", exportFormat });
+      assert.notEqual(result.data.nodes[0].canvasHref, result.data.nodes[1].canvasHref);
+      if (exportFormat === "package") {
+        for (const node of result.data.nodes) {
+          assert.doesNotMatch(node.canvasHref!, /[# ]/);
+          assert.ok(files.get(`out/pdf/${node.canvasHref}`)?.text?.includes(node.exportPath!.split("/").pop()!));
+        }
+      }
+    });
+
+    await test(`exports to the vault root in ${exportFormat}`, async () => {
+      for (const outputDir of [".", "/"]) {
+        const { app, files } = createMockApp([{ path: "root.canvas", text: '{"nodes":[],"edges":[]}' }]);
+        const result = await exportCanvasPackage(app as never, files.get("root.canvas") as never, { darkMode: false, outputDir, exportFormat });
+        assert.equal(result.outputPath, exportFormat === "package" ? "root" : "root.html");
+      }
+    });
+  }
+
   await test("exports markdown and image file nodes into a package", async () => {
     const png = new Uint8Array([137, 80, 78, 71]).buffer;
     const canvasJson = JSON.stringify({

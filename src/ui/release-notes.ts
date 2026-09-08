@@ -45,8 +45,10 @@ class ReleaseNotesModal extends Modal {
   }
 }
 
-export function openCurrentReleaseNotes(app: App): Promise<void> {
+export function openCurrentReleaseNotes(app: App, registerCleanup: (cleanup: () => void) => () => void): Promise<void> {
   return new Promise((resolve) => {
-    new ReleaseNotesModal(app, resolve).open();
+    const modal = new ReleaseNotesModal(app, () => { unregister(); resolve(); });
+    const unregister = registerCleanup(() => modal.close());
+    modal.open();
   });
 }

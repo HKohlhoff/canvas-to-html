@@ -40,7 +40,7 @@ You can choose the export format and other options in the plugin settings.
 
 An **interactive export example** of the Canvas shown above is available as a
 [single HTML file](documentation/Canvas-HTML-Exporter-Documentation.html).
-It is a large file of about 19.3 MB and was refreshed for version 1.3.1.
+It is a large file of about 19.3 MB and was refreshed for version 1.3.2.
 This README contains the current feature documentation.
 
 A **demo-vault** with the complete content showcase can be downloaded from the
@@ -88,7 +88,9 @@ controls above the Canvas:
   viewport. It can be moved and used for navigation.
 - `Search...` opens keyboard- and mouse-accessible node search. Selecting a
   result reveals it when necessary, scrolls it into view, and marks it briefly
-  with a prominent yellow pulse highlight.
+  with a prominent yellow pulse highlight. Tab and Shift+Tab stay inside
+  the open search dialog; closing it returns focus to the control used to open
+  it.
 
 ### Folding menu
 
@@ -169,13 +171,14 @@ Vault that later opens or shares the export.
 
 ## Update Description
 
-After this feature update is loaded in Obsidian, the plugin opens a Markdown-
+After a new plugin version is loaded in Obsidian, the plugin opens a Markdown-
 rendered `What's new` view once. It summarizes the new controls and how to use
 them. Closing the view removes it completely; no release-note file is created
 in the Vault.
 
-The update description is shown only once and does not reappear on every
-Obsidian start. Use **Show last update** at the bottom of the plugin settings to
+The update description is marked as read only after you close it. It is shown
+once per plugin version, including maintenance updates, and does not reappear
+on every Obsidian start. Use **Show last update** at the bottom of the plugin settings to
 open it again at any time. Use **Show readme** beside it to open this complete
 documentation locally inside Obsidian. The repository keeps the same text in
 [`Last Update.md`](Last%20Update.md).

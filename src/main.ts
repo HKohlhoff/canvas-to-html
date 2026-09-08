@@ -27,9 +27,16 @@ const FALLBACK_HEADING_COLORS: HeadingColorMap = {
 export default class CanvasHtmlExporterPlugin extends Plugin {
   settings: PluginSettings = DEFAULT_SETTINGS;
   private lastShownReleaseNotesId = "";
+  private disposed = false;
+  private exportInProgress = false;
+  private readonly modalClosers = new Set<() => void>();
+  private releaseNotesTask: Promise<boolean> | null = null;
+  private saveQueue: Promise<void> = Promise.resolve();
 
   async onload(): Promise<void> {
+    this.disposed = false;
     await this.loadSettings();
+    if (this.disposed) return;
 
     this.addRibbonIcon("file-down", "Export canvas as HTML", () => {
       void this.exportCurrentCanvas();
@@ -46,17 +53,35 @@ export default class CanvasHtmlExporterPlugin extends Plugin {
     this.addSettingTab(new CanvasHtmlExporterSettingTab(this.app, this));
 
     this.app.workspace.onLayoutReady(() => {
-      void this.showCurrentReleaseNotesOnce();
+      if (!this.disposed) void this.showCurrentReleaseNotesOnce();
     });
   }
 
+  onunload(): void {
+    this.disposed = true;
+    for (const close of this.modalClosers) close();
+    this.modalClosers.clear();
+  }
+
+  private registerModalCleanup(cleanup: () => void): () => void {
+    this.modalClosers.add(cleanup);
+    return () => { this.modalClosers.delete(cleanup); };
+  }
+
   async exportCurrentCanvas(): Promise<void> {
+    if (this.disposed) return;
+    if (this.exportInProgress) {
+      new Notice("A canvas export is already running.", 4000);
+      return;
+    }
     const file = this.getActiveCanvasFile();
     if (!file) {
       new Notice("No active canvas file found.", 4000);
       return;
     }
 
+    this.exportInProgress = true;
+    const settings = { ...this.settings };
     try {
       const canvasColors = this.readCanvasPaletteColors();
       const calloutColors = this.readCalloutColors();
@@ -65,15 +90,15 @@ export default class CanvasHtmlExporterPlugin extends Plugin {
       const initialFoldState = await resolveInitialCanvasFoldState(
         this.app,
         file.path,
-        this.settings.foldingInitialState,
+        settings.foldingInitialState,
       );
       const result = await exportCanvasPackage(this.app, file, {
-        ...this.settings,
+        ...settings,
         canvasColors,
         calloutColors,
         headingColors,
         inlineStyleColors,
-        foldingInitiallyEnabled: this.settings.foldingInitialState !== "none",
+        foldingInitiallyEnabled: settings.foldingInitialState !== "none",
         initialFoldState: initialFoldState ?? undefined,
       });
       result.options.canvasColors = this.readCanvasPaletteColors(collectCanvasColorKeys(result.data));
@@ -85,6 +110,8 @@ export default class CanvasHtmlExporterPlugin extends Plugin {
       console.error("[canvas-html-exporter] Export failed", error);
       const message = error instanceof Error ? error.message : "Unknown error";
       new Notice(`Canvas export failed: ${message}`, 7000);
+    } finally {
+      this.exportInProgress = false;
     }
   }
 
@@ -416,17 +443,18 @@ export default class CanvasHtmlExporterPlugin extends Plugin {
   }
 
   showLastUpdate(): void {
-    void this.openLastUpdate();
+    void this.showCurrentReleaseNotesOnce(true);
   }
 
   showReadme(): void {
-    openPluginReadme(this.app);
+    if (!this.disposed) openPluginReadme(this.app, (cleanup) => this.registerModalCleanup(cleanup));
   }
 
-  private async showCurrentReleaseNotesOnce(): Promise<void> {
-    if (this.lastShownReleaseNotesId === CURRENT_RELEASE_NOTES_ID) return;
+  private async showCurrentReleaseNotesOnce(force = false): Promise<void> {
+    if (!force && this.lastShownReleaseNotesId === CURRENT_RELEASE_NOTES_ID) return;
 
-    if (!(await this.openLastUpdate())) return;
+    if (!(await this.openLastUpdate()) || this.disposed) return;
+    if (this.lastShownReleaseNotesId === CURRENT_RELEASE_NOTES_ID) return;
 
     this.lastShownReleaseNotesId = CURRENT_RELEASE_NOTES_ID;
     try {
@@ -437,9 +465,18 @@ export default class CanvasHtmlExporterPlugin extends Plugin {
     }
   }
 
-  private async openLastUpdate(): Promise<boolean> {
+  private openLastUpdate(): Promise<boolean> {
+    if (this.releaseNotesTask) return this.releaseNotesTask;
+    this.releaseNotesTask = this.openLastUpdateModal().finally(() => {
+      this.releaseNotesTask = null;
+    });
+    return this.releaseNotesTask;
+  }
+
+  private async openLastUpdateModal(): Promise<boolean> {
     try {
-      await openCurrentReleaseNotes(this.app);
+      if (this.disposed) return false;
+      await openCurrentReleaseNotes(this.app, (cleanup) => this.registerModalCleanup(cleanup));
       return true;
     } catch (error) {
       console.error("[canvas-html-exporter] Could not open release notes", error);
@@ -449,9 +486,10 @@ export default class CanvasHtmlExporterPlugin extends Plugin {
   }
 
   private async savePluginData(): Promise<void> {
-    await this.saveData(buildStoredPluginData(
-      this.settings,
-      this.lastShownReleaseNotesId,
-    ));
+    if (this.disposed) return;
+    const snapshot = buildStoredPluginData(this.settings, this.lastShownReleaseNotesId);
+    const write = this.saveQueue.catch(() => {}).then(() => this.saveData(snapshot));
+    this.saveQueue = write;
+    await write;
   }
 }

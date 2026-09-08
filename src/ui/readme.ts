@@ -8,6 +8,10 @@ const REPOSITORY_URL = "https://github.com/HKohlhoff/canvas-html-exporter";
 class ReadmeModal extends Modal {
   private readonly renderComponent = new Component();
 
+  constructor(app: App, private readonly onClosed: () => void) {
+    super(app);
+  }
+
   onOpen(): void {
     this.setTitle("Canvas HTML exporter: README");
     this.modalEl.addClass("canvas-html-exporter-release-notes-modal");
@@ -37,11 +41,14 @@ class ReadmeModal extends Modal {
   }
 
   onClose(): void {
+    this.onClosed();
     this.renderComponent.unload();
     this.contentEl.empty();
   }
 }
 
-export function openPluginReadme(app: App): void {
-  new ReadmeModal(app).open();
+export function openPluginReadme(app: App, registerCleanup: (cleanup: () => void) => () => void): void {
+  const modal = new ReadmeModal(app, () => unregister());
+  const unregister = registerCleanup(() => modal.close());
+  modal.open();
 }

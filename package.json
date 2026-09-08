@@ -1,6 +1,6 @@
 {
   "name": "canvas-html-exporter",
-  "version": "1.3.1",
+  "version": "1.3.2",
   "description": "Export canvas files as portable interactive HTML package or standalone page.",
   "main": "main.js",
   "engines": {
@@ -30,7 +30,7 @@
     "build:prod:deploy": "node build.mjs --production --deploy",
     "dev:prod": "node build.mjs --watch --production",
     "dev:prod:deploy": "node build.mjs --watch --production --deploy",
-    "version": "node version-bump.mjs && git add manifest.json versions.json src/render/converter.ts"
+    "version": "node version-bump.mjs && git add manifest.json versions.json src/render/metadata.ts"
   },
   "keywords": [
     "obsidian",

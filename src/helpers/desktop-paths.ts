@@ -18,7 +18,7 @@ declare const module: { require?: (id: string) => unknown } | undefined;
 export function isAbsoluteFilesystemPath(value: string): boolean {
   const normalized = String(value || "").trim();
   if (!normalized) return false;
-  return /^([A-Za-z]:[/\\]|\/)/.test(normalized);
+  return /^([A-Za-z]:[/\\]|\/|\\\\)/.test(normalized);
 }
 
 export function isMobileRuntime(): boolean {
@@ -32,16 +32,16 @@ export function normalizeStoredOutputPathValue(raw: string): string {
   if (isAbsoluteFilesystemPath(value)) {
     return normalizeAbsoluteFolderPath(value);
   }
-  if (value === "/" || value === ".") return "/";
+  if (value === ".") return ".";
   return value.replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
 }
 
 export function normalizeAbsoluteFolderPath(raw: string): string {
-  return String(raw || "")
-    .trim()
-    .replace(/\\/g, "/")
-    .replace(/\/+/g, "/")
-    .replace(/\/+$/, "") || "/";
+  const value = String(raw || "").trim().replace(/\\/g, "/");
+  const prefix = value.startsWith("//") ? "//" : "";
+  const normalized = value.replace(/\/+/g, "/").replace(/\/+$/, "");
+  if (/^[A-Za-z]:$/.test(normalized)) return `${normalized}/`;
+  return prefix ? prefix + normalized.replace(/^\/+/, "") : normalized || "/";
 }
 
 export function getDesktopNodeFs(): DesktopFsModule | null {
